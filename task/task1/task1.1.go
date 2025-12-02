@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"log"
 	"math/big"
 	"os"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/joho/godotenv"
 )
@@ -48,7 +52,60 @@ func task1(client *ethclient.Client) {
 }
 
 func task2(client *ethclient.Client) {
+	privateKeyHex := os.Getenv("PRIVATE_KEY")
+	privateKey, err := crypto.HexToECDSA(privateKeyHex)
+	if err != nil {
+		log.Fatal(err)
+	}
+	publicKey := privateKey.Public()
+	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
+	if !ok {
+		log.Fatal("error casting public key to ECDSA")
+	}
+	fromAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
 
+	nonce, err := client.PendingNonceAt(context.Background(), fromAddress)
+	if err != nil {
+		log.Fatal(err)
+	}
+	value := big.NewInt(1e9)
+
+	gasPrice, err := client.SuggestGasPrice(context.Background())
+	fmt.Println("gasPrice", gasPrice)
+
+	toAddress := common.HexToAddress("0x68e8441ebDac4bE9d43aC5975feC6E45E360563c")
+
+	gasLimit := uint64(21000)
+	data := []byte{}
+
+	// 创建 LegacyTx
+	legacyTx := &types.LegacyTx{
+		Nonce:    nonce,
+		GasPrice: gasPrice,
+		Gas:      gasLimit,
+		To:       &toAddress,
+		Value:    value,
+		Data:     data,
+	}
+	tx := types.NewTx(legacyTx)
+	fmt.Printf("交易哈希(未签名): %s\n", tx.Hash().Hex())
+	fmt.Printf("交易类型: %d\n\n", tx.Type())
+
+	chainID, err := client.ChainID(context.Background())
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	signedTx, err := types.SignTx(tx, types.NewEIP155Signer(chainID), privateKey)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = client.SendTransaction(context.Background(), signedTx)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Tx sent: ", signedTx.Hash().Hex())
 }
 
 func main() {
@@ -62,6 +119,6 @@ func main() {
 		log.Fatal(err)
 	}
 
-	task1(client)
-	//task2(client)
+	//task1(client)
+	task2(client)
 }
